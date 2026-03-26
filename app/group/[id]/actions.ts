@@ -1,7 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addMember, updateMember, deleteMember, addExpense, deleteExpense, addSettlement, deleteSettlement } from "@/lib/supabase";
+import { updateGroup, addMember, updateMember, deleteMember, addExpense, updateExpense, deleteExpense, addSettlement, deleteSettlement } from "@/lib/supabase";
+
+export async function updateGroupAction(
+  groupId: string,
+  fields: { name?: string }
+): Promise<{ error?: string }> {
+  try {
+    await updateGroup(groupId, fields);
+    revalidatePath(`/group/${groupId}`);
+    return {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Failed to update group" };
+  }
+}
 
 export async function addMemberAction(
   groupId: string,
@@ -19,7 +32,7 @@ export async function addMemberAction(
 export async function updateMemberAction(
   groupId: string,
   memberId: string,
-  fields: { name?: string; payment_handle?: string | null }
+  fields: { name?: string; payment_handle?: string | null; payment_type?: "venmo" | "zelle" | null }
 ): Promise<{ error?: string }> {
   try {
     await updateMember(memberId, fields);
@@ -58,6 +71,26 @@ export async function addExpenseAction(data: {
   } catch (e) {
     return {
       error: e instanceof Error ? e.message : "Failed to add expense",
+    };
+  }
+}
+
+export async function updateExpenseAction(data: {
+  groupId: string;
+  expenseId: string;
+  paidBy: string;
+  description: string;
+  amount: number;
+  splitMethod: "equal" | "percentage";
+  splits: { memberId: string; percentage?: number; amount: number }[];
+}): Promise<{ error?: string }> {
+  try {
+    await updateExpense(data);
+    revalidatePath(`/group/${data.groupId}`);
+    return {};
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Failed to update expense",
     };
   }
 }

@@ -11,11 +11,15 @@ import AddExpenseModal from "@/components/AddExpenseModal";
 import ShareButton from "@/components/ShareButton";
 import SaveRecentGroup from "@/components/SaveRecentGroup";
 import SettlementHistory from "@/components/SettlementHistory";
+import EditableGroupName from "@/components/EditableGroupName";
+import { EditMemberProvider } from "@/components/EditMemberContext";
 import {
+  updateGroupAction,
   addMemberAction,
   updateMemberAction,
   deleteMemberAction,
   addExpenseAction,
+  updateExpenseAction,
   deleteExpenseAction,
   settleDebtAction,
   undoSettlementAction,
@@ -60,7 +64,8 @@ export default async function GroupPage({
   };
 
   return (
-    <main className="flex-1 flex flex-col gap-5">
+    <EditMemberProvider>
+    <main className="flex flex-col gap-5 pb-8">
       <SaveRecentGroup id={id} name={group.name} />
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -71,9 +76,7 @@ export default async function GroupPage({
           >
             &larr; Home
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight text-charcoal mt-1">
-            {group.name}
-          </h1>
+          <EditableGroupName groupId={id} name={group.name} updateGroupAction={updateGroupAction} />
         </div>
         <ShareButton />
       </div>
@@ -101,6 +104,7 @@ export default async function GroupPage({
       <DebtSimplification
         debts={debts}
         settleAction={boundSettleAction}
+        groupName={group.name}
       />
 
       {/* Settlement History */}
@@ -114,7 +118,11 @@ export default async function GroupPage({
       <ExpenseList
         expenses={expenses}
         deleteExpenseAction={boundDeleteAction}
+        members={members}
+        groupId={id}
+        updateExpenseAction={updateExpenseAction}
       />
     </main>
+    </EditMemberProvider>
   );
 }

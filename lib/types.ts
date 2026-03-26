@@ -9,6 +9,7 @@ export interface Member {
   group_id: string;
   name: string;
   payment_handle: string | null;
+  payment_type: "venmo" | "zelle" | null;
   created_at: string;
 }
 

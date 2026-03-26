@@ -1,7 +1,8 @@
 "use client";
 
-import { useTransition } from "react";
-import { ExpenseWithSplits } from "@/lib/types";
+import { useState, useTransition } from "react";
+import { ExpenseWithSplits, Member } from "@/lib/types";
+import AddExpenseModal from "./AddExpenseModal";
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
@@ -22,13 +23,16 @@ function formatDate(dateString: string): string {
 function ExpenseRow({
   expense,
   deleteAction,
+  onEdit,
 }: {
   expense: ExpenseWithSplits;
   deleteAction: (expenseId: string) => Promise<{ error?: string }>;
+  onEdit: (expense: ExpenseWithSplits) => void;
 }) {
   const [isPending, startTransition] = useTransition();
 
-  function handleDelete() {
+  function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
     startTransition(async () => {
       await deleteAction(expense.id);
     });
@@ -36,7 +40,8 @@ function ExpenseRow({
 
   return (
     <div
-      className={`flex items-center gap-3 py-3 border-b border-border/60 last:border-0 transition-opacity ${
+      onClick={() => onEdit(expense)}
+      className={`flex items-center gap-3 py-3 border-b border-border/60 last:border-0 transition-all cursor-pointer hover:bg-input-bg/50 -mx-1 px-1 rounded-lg ${
         isPending ? "opacity-40" : ""
       }`}
     >
@@ -80,10 +85,26 @@ function ExpenseRow({
 export default function ExpenseList({
   expenses,
   deleteExpenseAction,
+  members,
+  groupId,
+  updateExpenseAction,
 }: {
   expenses: ExpenseWithSplits[];
   deleteExpenseAction: (expenseId: string) => Promise<{ error?: string }>;
+  members: Member[];
+  groupId: string;
+  updateExpenseAction: (data: {
+    groupId: string;
+    expenseId: string;
+    paidBy: string;
+    description: string;
+    amount: number;
+    splitMethod: "equal" | "percentage";
+    splits: { memberId: string; percentage?: number; amount: number }[];
+  }) => Promise<{ error?: string }>;
 }) {
+  const [editingExpense, setEditingExpense] = useState<ExpenseWithSplits | null>(null);
+
   if (expenses.length === 0) {
     return (
       <div className="bg-card rounded-xl p-4 border border-border">
@@ -98,19 +119,33 @@ export default function ExpenseList({
   }
 
   return (
-    <div className="bg-card rounded-xl p-4 border border-border">
-      <h2 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">
-        Expenses
-      </h2>
-      <div>
-        {expenses.map((expense) => (
-          <ExpenseRow
-            key={expense.id}
-            expense={expense}
-            deleteAction={deleteExpenseAction}
-          />
-        ))}
+    <>
+      <div className="bg-card rounded-xl p-4 border border-border">
+        <h2 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">
+          Expenses
+        </h2>
+        <div>
+          {expenses.map((expense) => (
+            <ExpenseRow
+              key={expense.id}
+              expense={expense}
+              deleteAction={deleteExpenseAction}
+              onEdit={setEditingExpense}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+
+      {editingExpense && (
+        <AddExpenseModal
+          members={members}
+          groupId={groupId}
+          updateExpenseAction={updateExpenseAction}
+          expense={editingExpense}
+          isOpen={true}
+          onClose={() => setEditingExpense(null)}
+        />
+      )}
+    </>
   );
 }

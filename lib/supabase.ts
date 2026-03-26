@@ -46,6 +46,18 @@ export async function getGroup(id: string): Promise<Group | null> {
   return data as Group;
 }
 
+export async function updateGroup(
+  groupId: string,
+  fields: { name?: string }
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("groups")
+    .update(fields)
+    .eq("id", groupId);
+
+  if (error) throw new Error(error.message);
+}
+
 export async function addMember(
   groupId: string,
   name: string
@@ -78,7 +90,7 @@ export async function getMembers(groupId: string): Promise<Member[]> {
 
 export async function updateMember(
   memberId: string,
-  fields: { name?: string; payment_handle?: string | null }
+  fields: { name?: string; payment_handle?: string | null; payment_type?: "venmo" | "zelle" | null }
 ): Promise<void> {
   const { error } = await getSupabase()
     .from("members")
@@ -157,6 +169,48 @@ export async function addExpense(input: {
   if (splitsError) throw new Error(splitsError.message);
 
   return expense as Expense;
+}
+
+export async function updateExpense(input: {
+  expenseId: string;
+  paidBy: string;
+  description: string;
+  amount: number;
+  splitMethod: "equal" | "percentage";
+  splits: { memberId: string; percentage?: number; amount: number }[];
+}): Promise<void> {
+  const { error: expenseError } = await getSupabase()
+    .from("expenses")
+    .update({
+      paid_by: input.paidBy,
+      description: input.description,
+      amount: input.amount,
+      split_method: input.splitMethod,
+    })
+    .eq("id", input.expenseId);
+
+  if (expenseError) throw new Error(expenseError.message);
+
+  // Delete old splits, insert new ones
+  const { error: deleteError } = await getSupabase()
+    .from("expense_splits")
+    .delete()
+    .eq("expense_id", input.expenseId);
+
+  if (deleteError) throw new Error(deleteError.message);
+
+  const splitRows = input.splits.map((s) => ({
+    expense_id: input.expenseId,
+    member_id: s.memberId,
+    percentage: s.percentage ?? null,
+    amount: s.amount,
+  }));
+
+  const { error: splitsError } = await getSupabase()
+    .from("expense_splits")
+    .insert(splitRows);
+
+  if (splitsError) throw new Error(splitsError.message);
 }
 
 export async function getExpenses(

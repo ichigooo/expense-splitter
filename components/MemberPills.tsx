@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { Member } from "@/lib/types";
+import { useEditMember } from "./EditMemberContext";
 
 export default function MemberPills({
   members,
@@ -13,7 +14,7 @@ export default function MemberPills({
   members: Member[];
   groupId: string;
   addMemberAction: (groupId: string, name: string) => Promise<{ error?: string }>;
-  updateMemberAction: (groupId: string, memberId: string, fields: { name?: string; payment_handle?: string | null }) => Promise<{ error?: string }>;
+  updateMemberAction: (groupId: string, memberId: string, fields: { name?: string; payment_handle?: string | null; payment_type?: "venmo" | "zelle" | null }) => Promise<{ error?: string }>;
   deleteMemberAction: (groupId: string, memberId: string) => Promise<{ error?: string }>;
 }) {
   const [adding, setAdding] = useState(false);
@@ -21,8 +22,24 @@ export default function MemberPills({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editHandle, setEditHandle] = useState("");
+  const [editPaymentType, setEditPaymentType] = useState<"venmo" | "zelle">("venmo");
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { editMemberId, clearEdit } = useEditMember();
+
+  // Handle external edit requests (e.g. from DebtSimplification banner)
+  useEffect(() => {
+    if (editMemberId) {
+      const member = members.find((m) => m.id === editMemberId);
+      if (member) {
+        startEditing(member);
+        containerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      clearEdit();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMemberId]);
 
   const membersWithoutHandle = members.filter((m) => !m.payment_handle);
 
@@ -44,6 +61,7 @@ export default function MemberPills({
     setEditingId(member.id);
     setEditName(member.name);
     setEditHandle(member.payment_handle || "");
+    setEditPaymentType(member.payment_type || "venmo");
     setError("");
   }
 
@@ -54,15 +72,17 @@ export default function MemberPills({
 
     const nameChanged = editName.trim() !== member.name;
     const handleChanged = (editHandle.trim() || null) !== (member.payment_handle || null);
+    const typeChanged = editPaymentType !== (member.payment_type || "venmo");
 
-    if (!nameChanged && !handleChanged) {
+    if (!nameChanged && !handleChanged && !typeChanged) {
       setEditingId(null);
       return;
     }
 
-    const fields: { name?: string; payment_handle?: string | null } = {};
+    const fields: { name?: string; payment_handle?: string | null; payment_type?: "venmo" | "zelle" | null } = {};
     if (nameChanged) fields.name = editName.trim();
     if (handleChanged) fields.payment_handle = editHandle.trim() || null;
+    if (handleChanged || typeChanged) fields.payment_type = editHandle.trim() ? editPaymentType : null;
 
     startTransition(async () => {
       const result = await updateMemberAction(groupId, editingId, fields);
@@ -88,7 +108,7 @@ export default function MemberPills({
   }
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2.5" ref={containerRef}>
       <div className="flex items-center gap-2 flex-wrap">
         {members.map((member) =>
           editingId === member.id ? (
@@ -131,18 +151,36 @@ export default function MemberPills({
                   Cancel
                 </button>
               </div>
-              <input
-                type="text"
-                value={editHandle}
-                onChange={(e) => setEditHandle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSave();
-                  if (e.key === "Escape") { setEditingId(null); setError(""); }
-                }}
-                placeholder="Venmo or Zelle handle, e.g. @john-doe"
-                maxLength={50}
-                className="w-full bg-input-bg rounded-lg px-3 py-1.5 text-sm border border-border focus:border-sage focus:ring-1 focus:ring-sage transition-colors placeholder:text-muted/50"
-              />
+              <div className="flex items-center gap-1.5">
+                <div className="flex rounded-lg border border-border overflow-hidden flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setEditPaymentType("venmo")}
+                    className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${editPaymentType === "venmo" ? "bg-sage text-white" : "bg-input-bg text-muted hover:text-charcoal"}`}
+                  >
+                    Venmo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditPaymentType("zelle")}
+                    className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${editPaymentType === "zelle" ? "bg-sage text-white" : "bg-input-bg text-muted hover:text-charcoal"}`}
+                  >
+                    Zelle
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={editHandle}
+                  onChange={(e) => setEditHandle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSave();
+                    if (e.key === "Escape") { setEditingId(null); setError(""); }
+                  }}
+                  placeholder={editPaymentType === "venmo" ? "@username" : "email or phone"}
+                  maxLength={50}
+                  className="flex-1 min-w-0 bg-input-bg rounded-lg px-3 py-1.5 text-sm border border-border focus:border-sage focus:ring-1 focus:ring-sage transition-colors placeholder:text-muted/50"
+                />
+              </div>
             </div>
           ) : (
             <button
@@ -153,7 +191,7 @@ export default function MemberPills({
               {member.name}
               {member.payment_handle ? (
                 <span className="text-muted text-xs font-normal">
-                  {member.payment_handle}
+                  {member.payment_handle}{member.payment_type === "zelle" ? " (Zelle)" : ""}
                 </span>
               ) : (
                 <svg

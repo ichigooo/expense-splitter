@@ -1,17 +1,21 @@
 "use client";
 
 import { useState, useTransition, useEffect, useCallback, useRef } from "react";
-import { Member } from "@/lib/types";
+import { Member, ExpenseWithSplits } from "@/lib/types";
 import { calculateSplitAmounts } from "@/lib/splitCalculator";
 
 export default function AddExpenseModal({
   members,
   groupId,
   addExpenseAction,
+  updateExpenseAction,
+  expense,
+  isOpen,
+  onClose,
 }: {
   members: Member[];
   groupId: string;
-  addExpenseAction: (data: {
+  addExpenseAction?: (data: {
     groupId: string;
     paidBy: string;
     description: string;
@@ -19,7 +23,20 @@ export default function AddExpenseModal({
     splitMethod: "equal" | "percentage";
     splits: { memberId: string; percentage?: number; amount: number }[];
   }) => Promise<{ error?: string }>;
+  updateExpenseAction?: (data: {
+    groupId: string;
+    expenseId: string;
+    paidBy: string;
+    description: string;
+    amount: number;
+    splitMethod: "equal" | "percentage";
+    splits: { memberId: string; percentage?: number; amount: number }[];
+  }) => Promise<{ error?: string }>;
+  expense?: ExpenseWithSplits | null;
+  isOpen?: boolean;
+  onClose?: () => void;
 }) {
+  const isEditMode = !!expense;
   const [open, setOpen] = useState(false);
   const [paidBy, setPaidBy] = useState("");
   const [description, setDescription] = useState("");
@@ -34,14 +51,42 @@ export default function AddExpenseModal({
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
   const previousOverflow = useRef("");
+  const justPrefilled = useRef(false);
+
+  const modalVisible = open || !!isOpen;
 
   const includedMembers = members.filter((m) => includedIds.has(m.id));
   const includedMemberIds = includedMembers.map((m) => m.id);
   const parsedAmount = parseFloat(amount) || 0;
 
+  // Pre-fill form when editing
+  useEffect(() => {
+    if (expense && isOpen) {
+      setPaidBy(expense.paid_by);
+      setDescription(expense.description);
+      setAmount(String(Number(expense.amount)));
+      setSplitMethod(expense.split_method);
+      setIncludedIds(new Set(expense.expense_splits.map((s) => s.member_id)));
+      if (expense.split_method === "percentage") {
+        const pcts: Record<string, string> = {};
+        expense.expense_splits.forEach((s) => {
+          pcts[s.member_id] = String(s.percentage ?? 0);
+        });
+        setPercentages(pcts);
+      } else {
+        setPercentages({});
+      }
+      justPrefilled.current = true;
+    }
+  }, [expense, isOpen]);
+
   // Initialize percentages when switching to percentage mode
   useEffect(() => {
-    if (splitMethod === "percentage") {
+    if (justPrefilled.current) {
+      justPrefilled.current = false;
+      return;
+    }
+    if (splitMethod === "percentage" && includedMembers.length > 0) {
       const equal = (100 / includedMembers.length).toFixed(2);
       const pcts: Record<string, string> = {};
       includedMembers.forEach((m) => {
@@ -91,7 +136,7 @@ export default function AddExpenseModal({
 
   // Lock body scroll when modal is open
   useEffect(() => {
-    if (open) {
+    if (modalVisible) {
       previousOverflow.current = document.body.style.overflow;
       document.body.style.overflow = "hidden";
     } else {
@@ -100,13 +145,13 @@ export default function AddExpenseModal({
     return () => {
       document.body.style.overflow = previousOverflow.current;
     };
-  }, [open]);
+  }, [modalVisible]);
 
   function toggleMember(id: string) {
     setIncludedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
-        if (next.size <= 1) return prev; // keep at least 1
+        if (next.size <= 1) return prev;
         next.delete(id);
       } else {
         next.add(id);
@@ -118,6 +163,7 @@ export default function AddExpenseModal({
   function handleClose() {
     setOpen(false);
     resetForm();
+    onClose?.();
   }
 
   function handleSubmit() {
@@ -133,14 +179,28 @@ export default function AddExpenseModal({
         amount: splitAmounts[id] || 0,
       }));
 
-      const result = await addExpenseAction({
-        groupId,
-        paidBy,
-        description: description.trim(),
-        amount: parsedAmount,
-        splitMethod,
-        splits,
-      });
+      let result: { error?: string } | undefined;
+
+      if (isEditMode && updateExpenseAction) {
+        result = await updateExpenseAction({
+          groupId,
+          expenseId: expense!.id,
+          paidBy,
+          description: description.trim(),
+          amount: parsedAmount,
+          splitMethod,
+          splits,
+        });
+      } else if (addExpenseAction) {
+        result = await addExpenseAction({
+          groupId,
+          paidBy,
+          description: description.trim(),
+          amount: parsedAmount,
+          splitMethod,
+          splits,
+        });
+      }
 
       if (result?.error) {
         setError(result.error);
@@ -150,27 +210,32 @@ export default function AddExpenseModal({
     });
   }
 
-  if (members.length < 2) {
-    return (
-      <button
-        disabled
-        className="w-full bg-sage/40 text-white rounded-xl px-6 py-3 font-medium cursor-not-allowed"
-      >
-        Add at least 2 members first
-      </button>
-    );
+  // Add mode: show trigger button (or disabled state)
+  if (!isEditMode) {
+    if (members.length < 2) {
+      return (
+        <button
+          disabled
+          className="w-full bg-sage/40 text-white rounded-xl px-6 py-3 font-medium cursor-not-allowed"
+        >
+          Add at least 2 members first
+        </button>
+      );
+    }
   }
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="w-full bg-sage text-white rounded-xl px-6 py-3 font-medium transition-all hover:opacity-90"
-      >
-        Add Expense
-      </button>
+      {!isEditMode && (
+        <button
+          onClick={() => setOpen(true)}
+          className="w-full bg-sage text-white rounded-xl px-6 py-3 font-medium transition-all hover:opacity-90"
+        >
+          Add Expense
+        </button>
+      )}
 
-      {open && (
+      {modalVisible && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-charcoal/30 backdrop-blur-sm animate-fade-in"
@@ -180,7 +245,7 @@ export default function AddExpenseModal({
             {/* Sticky header */}
             <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/60 flex-shrink-0">
               <h2 className="text-lg font-semibold text-charcoal">
-                Add Expense
+                {isEditMode ? "Edit Expense" : "Add Expense"}
               </h2>
               <button
                 onClick={handleClose}
@@ -385,7 +450,13 @@ export default function AddExpenseModal({
                 disabled={!isValid || isPending}
                 className="w-full bg-sage text-white rounded-xl px-6 py-3 font-medium transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {isPending ? "Adding..." : "Add Expense"}
+                {isPending
+                  ? isEditMode
+                    ? "Saving..."
+                    : "Adding..."
+                  : isEditMode
+                  ? "Save Changes"
+                  : "Add Expense"}
               </button>
             </div>
           </div>
